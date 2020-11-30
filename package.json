@@ -1,0 +1,24 @@
+{
+  "name": "n-tpool",
+  "version": "0.0.1",
+  "description": "thrift连接池",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/Lisy97/n-tpool.git"
+  },
+  "keywords": [
+    "thrift",
+    "node",
+    "pool"
+  ],
+  "author": "lisy97",
+  "license": "ISC",
+  "dependencies": {
+    "generic-pool": "^3.7.1",
+    "thrift": "^0.13.0-hotfix.1"
+  }
+}
