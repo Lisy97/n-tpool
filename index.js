@@ -37,22 +37,23 @@ function createThriftConnection(host, port, option, constructor, serviceName) {
 }
 // 每次执行方法添加连接监听
 function listenError(connection, reject) {
-	function onTimeout() { reject('请求超时。') }
+	// function onTimeout() { reject(`请求[${connection.host}:${connection.port}]超时。`) }
 	function onError(err) {
 		if (connection.connected) {
-			reject(`请求发生异常：${err.message}`);
+			reject(`请求[${connection.host}:${connection.port}]异常：${err.message}`);
 		} else {
-			reject(`请求发生异常：网络中断。`);
+			reject(`请求[${connection.host}:${connection.port}]异常：网络中断。`);
 		} 
 	}
-	function onClose() { reject(`[${connection.host}:${connection.port}]服务关闭`) }
-	connection.on('timeout', onTimeout).on('close', onClose).on('error', onError);
-	return { onTimeout, onError, onClose };
+	function onClose() { reject(`请求[${connection.host}:${connection.port}]异常：网络中断或者服务关闭`) }
+	// connection.on('timeout', onTimeout).on('close', onClose).on('error', onError);
+	// return { onTimeout, onError, onClose };
+	connection.on('close', onClose).on('error', onError);
+	return { onError, onClose };
 }
 // 方法执行函数
 function invoke(serviceName, methodName, pool) {
 	return function(...args) {
-		let errorCb;
 		return pool.acquire().catch((e) => {
 			return new Promise((resolve, reject) => {
 				if (!pool._enable_net) {
@@ -73,7 +74,7 @@ function invoke(serviceName, methodName, pool) {
 								pool._draining = true;
 								pool._enable_net = false;
 							}
-							reject('获取thrift连接失败：可能网络中断或者服务关闭');
+							reject(`获取[${pool._host}:${pool._port}]异常：网络中断或者服务关闭`);
 						});
 					}
 				} else {
@@ -105,6 +106,7 @@ function invoke(serviceName, methodName, pool) {
 		}).then((connection) => {
 			let client = connection.client;
 			client = serviceName ? client[serviceName] : client;
+			let errorCb;
 			return new Promise((resolve, reject) => {
 				errorCb = listenError(connection, reject);
 				client[methodName](...args).then(res => {
@@ -113,20 +115,26 @@ function invoke(serviceName, methodName, pool) {
 					reject(err);
 				});
 			}).then((res) => {
-				connection.removeListener('timeout', errorCb.onTimeout)
-					.removeListener('close', errorCb.onClose)
+				connection.removeListener('close', errorCb.onClose)
 					.removeListener('error', errorCb.onError);
-				pool.release(connection);
+					// .removeListener('timeout', errorCb.onTimeout)
+				pool.release(connection).catch(err => {
+					// console.log('release1：', err);
+				});;
 				return res;
 			}).catch((err) => {
-				connection.removeListener('timeout', errorCb.onTimeout)
-					.removeListener('close', errorCb.onClose)
+				connection.removeListener('close', errorCb.onClose)
 					.removeListener('error', errorCb.onError);
+					// .removeListener('timeout', errorCb.onTimeout)
 				if (connection.connected) {
 					connection.requestState === 1;
-					pool.release(connection);
+					pool.release(connection).catch(err => {
+						// console.log('release2：', err);
+					});
 				} else {
-					pool.destroy(connection);
+					pool.destroy(connection).catch(err => {
+						// console.log('release2：', err);
+					});
 				}
 				throw err;
 			});
