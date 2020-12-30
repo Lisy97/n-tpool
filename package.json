@@ -1,6 +1,6 @@
 {
   "name": "n-tpool",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "description": "thrift连接池",
   "main": "index.js",
   "scripts": {

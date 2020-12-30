@@ -1,5 +1,6 @@
 const thrift = require('thrift');
 const genericPool = require('generic-pool');
+const net = require('net');
 
 const default_p_opts = require('./poolConfig.js');
 const default_t_opts = require('./thrifConfig.js');
@@ -12,17 +13,18 @@ function createThriftConnection(host, port, option, constructor, serviceName) {
 				reject('连接超时');
 				connection.destroy(new Error('连接超时'));
 			}).on('error', function(err) { reject(err.message); })
-			.on('close', function(err) { reject('连接关闭'); });
+			.on('close', function() { reject('连接关闭'); });
 	}).then(connection => {
+		connection.requestState = 1;
 		connection.removeAllListeners('timeout')
 			.removeAllListeners('error')
 			.removeAllListeners('close')
 			.on('timeout', function() {
-				this.requestState = '请求超时';
+				this.requestState = 10;
 			}).on('error', function(err) {
-				this.requestState = `请求发生错误：${err.message}`;
+				this.requestState = 20;
 			}).on('close', function() {
-				this.requestState = `[${host}:${port}]服务关闭`;
+				this.requestState = 30;
 			});
 		if (serviceName) {
 			const m = new thrift.Multiplexer();
@@ -51,7 +53,54 @@ function listenError(connection, reject) {
 function invoke(serviceName, methodName, pool) {
 	return function(...args) {
 		return pool.acquire().catch((e) => {
-		  return Promise.reject('获取thrift连接失败：可能网络中断或者服务关闭');
+			return new Promise((resolve, reject) => {
+				if (!pool._enable_net) {
+					if (!pool._net_testing) {
+						pool._net_testing = true;
+						const s  = net.connect({ host: pool._host, port: pool._port });
+						s.on('connect', function() {
+							pool._draining = false;
+							pool._enable_net = true;
+							s.destroy();
+						}).on('timeout', function() {
+							s.destroy('timeout');
+						}).on('error', function(err) {
+							console.log('draining:', err);
+						}).on('close', function(err) {
+							pool._net_testing = false;
+							if (err) {
+								pool._draining = true;
+								pool._enable_net = false;
+							}
+							reject('获取thrift连接失败：可能网络中断或者服务关闭');
+						});
+					}
+				} else {
+					pool._net_testing = true;
+					pool._enable_net = false;
+					const s  = net.connect({ host: pool._host, port: pool._port });
+					s.on('connect', function() {
+						pool._enable_net = true;
+						pool._draining = false;
+						s.destroy();
+					}).on('timeout', function() {
+						s.destroy('timeout');
+					}).on('error', function(err) {
+						console.log('testing:', err);
+					}).on('close', function(err) {
+						pool._net_testing = false;
+						if (err) {
+							pool._enable_net = false;
+							pool._draining = true;
+							for (const elem of pool._allObjects) { // 销毁所有连接
+								const connection = elem.obj;
+								pool.destroy(connection);
+							}
+						}
+						reject('获取thrift连接失败：可能网络中断或者服务关闭');
+					});
+				}
+			});
 		}).then((connection) => {
 			let client = connection.client;
 			client = serviceName ? client[serviceName] : client;
@@ -64,6 +113,7 @@ function invoke(serviceName, methodName, pool) {
 				}).catch(err => {
 					connection.removeListener('timeout', onTimeout).removeListener('close', onClose).removeListener('error', onError);
 					if (connection.connected) {
+						connection.requestState === 1
 						pool.release(connection);
 					} else {
 						pool.destroy(connection);
@@ -97,6 +147,11 @@ function ntpool(constructor, thriftOption, poolOption) {
 	};
 	
 	const myPool = genericPool.createPool(factory, p_opts);
+
+	myPool._host = host;
+	myPool._port = port;
+	myPool._net_testing = false; // 检查thrift通道通了吗
+	myPool._enable_net = true; // 连接池中thrift可连接
 	
 	return Object.keys(constructor.Client.prototype)
 		.filter((methodName, i, arr) => {
