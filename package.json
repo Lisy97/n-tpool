@@ -1,6 +1,6 @@
 {
   "name": "n-tpool",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "thrift连接池",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitee.com/Lisy97/n-tpool.git"
+    "url": "https://github.com/Lisy97/n-tpool.git"
   },
   "keywords": [
     "thrift",

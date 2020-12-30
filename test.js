@@ -1,24 +1,28 @@
-var  Service = require('./user');
-var mypool = require('./index');
+const thrift = require('thrift');
+const mypool = require('./index2.js');
 
-var thriftConfig = {
-  host: '127.0.0.1',
-  port: 33206
-}
+const UC = require('./user/index.js');
+const DC = require('./data/index');
 
-var client = mypool(Service, thriftConfig, {});
 
-function run(title, num) {
-  for (let index = 0; index < num; index++) {
-    client.getUserList().then(data => { // 1
-      console.log(title, index, '-正常')
-    }).catch(err => {
-      console.log(title, index, '-异常')
-    });
-  }
-}
+const dc = mypool(DC, {
+	host: '47.104.178.209',
+	port: 33213,
+	serviceName: 'DataIface'
+});
+dc.getDataTypeList().then(data => {
+	console.log(data);
+}).catch(err => {
+	console.log(err);
+})
+// const host = '47.104.178.209',
+// 	port = 33206;
 
-run('第一波', 3);
-setTimeout(run, 15*1000, '第二波', 2);
-setTimeout(run, 40*1000, '第三波', 5);
-setTimeout(run, 90*1000, '第四波', 3);
+// const client = mypool(UC, {host, port}, {});
+// console.log(client);
+// client.getUserList().then(data => {
+// 	console.log(11, data)
+// }).catch(err => {
+// 	console.log(11, err)
+// });
+	
