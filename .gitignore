@@ -3,6 +3,8 @@
 
 # thrift gen-file
 /user
+/data
+/test.js
 
 # local env files
 .env.local
