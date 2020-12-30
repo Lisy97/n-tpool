@@ -52,6 +52,7 @@ function listenError(connection, reject) {
 // 方法执行函数
 function invoke(serviceName, methodName, pool) {
 	return function(...args) {
+		let errorCb;
 		return pool.acquire().catch((e) => {
 			return new Promise((resolve, reject) => {
 				if (!pool._enable_net) {
@@ -65,7 +66,7 @@ function invoke(serviceName, methodName, pool) {
 						}).on('timeout', function() {
 							s.destroy('timeout');
 						}).on('error', function(err) {
-							console.log('draining:', err);
+							// console.log('draining:', err);
 						}).on('close', function(err) {
 							pool._net_testing = false;
 							if (err) {
@@ -86,7 +87,7 @@ function invoke(serviceName, methodName, pool) {
 					}).on('timeout', function() {
 						s.destroy('timeout');
 					}).on('error', function(err) {
-						console.log('testing:', err);
+						// console.log('testing:', err);
 					}).on('close', function(err) {
 						pool._net_testing = false;
 						if (err) {
@@ -105,21 +106,29 @@ function invoke(serviceName, methodName, pool) {
 			let client = connection.client;
 			client = serviceName ? client[serviceName] : client;
 			return new Promise((resolve, reject) => {
-				const { onTimeout, onError, onClose } = listenError(connection, reject);
+				errorCb = listenError(connection, reject);
 				client[methodName](...args).then(res => {
-					connection.removeListener('timeout', onTimeout).removeListener('close', onClose).removeListener('error', onError);
-					pool.release(connection);
 					resolve(res);
 				}).catch(err => {
-					connection.removeListener('timeout', onTimeout).removeListener('close', onClose).removeListener('error', onError);
-					if (connection.connected) {
-						connection.requestState === 1
-						pool.release(connection);
-					} else {
-						pool.destroy(connection);
-					}
 					reject(err);
 				});
+			}).then((res) => {
+				connection.removeListener('timeout', errorCb.onTimeout)
+					.removeListener('close', errorCb.onClose)
+					.removeListener('error', errorCb.onError);
+				pool.release(connection);
+				return res;
+			}).catch((err) => {
+				connection.removeListener('timeout', errorCb.onTimeout)
+					.removeListener('close', errorCb.onClose)
+					.removeListener('error', errorCb.onError);
+				if (connection.connected) {
+					connection.requestState === 1;
+					pool.release(connection);
+				} else {
+					pool.destroy(connection);
+				}
+				throw err;
 			});
 		});
 	}
